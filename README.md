@@ -1,4 +1,4 @@
-# Developer Documentation Generator (with Ollama AI)
+# Code Documentation Generator (with Ollama AI)
 
 This project automates the generation of developer-friendly technical documentation from any public GitHub repository. It clones a repository, scans its source code files, summarizes their purpose and structure using an Ollama AI model, and exports the results into a Word (.docx) file.
 
