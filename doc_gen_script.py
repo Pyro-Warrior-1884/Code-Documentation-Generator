@@ -7,6 +7,7 @@ import requests
 import json
 from pathlib import Path
 from typing import List, Dict
+from collections import deque
 
 try:
     from git import Repo
@@ -19,15 +20,17 @@ try:
 except Exception:
     Document = None
 
+# Supported code extensions (added .tsx for your repo)
 CODE_EXTENSIONS = {
-    ".py", ".js", ".jsx", ".ts", ".java", ".go", ".c", ".cpp", ".hpp",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".c", ".cpp", ".hpp",
     ".cs", ".rb", ".php", ".html", ".css", ".scss", ".yaml",
-    ".yml", ".sh", ".rs"
+    ".yml", ".sh", ".rs", ".prisma"
 }
 
+# Excluded directories
 EXCLUDE_DIRS = {
     "node_modules", "venv", ".venv", "env", ".env",
-    "build", "dist", "__pycache__"
+    "build", "dist", "__pycache__", ".git"
 }
 
 CHUNK_CHAR_SIZE = 8000
@@ -76,20 +79,26 @@ def clone_repo(repo_url: str, dest: str) -> str:
     return str(dest_path)
 
 
-def find_code_files(root: str) -> List[str]:
+# BFS-based file discovery
+def find_code_files_bfs(root: str) -> List[str]:
     files = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
+    queue = deque([root])
 
-        if ".git" in dirpath.split(os.sep):
-            continue
+    while queue:
+        current_dir = queue.popleft()
+        try:
+            for entry in os.scandir(current_dir):
+                if entry.is_dir():
+                    if entry.name not in EXCLUDE_DIRS:
+                        queue.append(entry.path)
+                else:
+                    ext = os.path.splitext(entry.name)[1].lower()
+                    if ext in CODE_EXTENSIONS:
+                        files.append(entry.path)
+        except PermissionError:
+            continue  # skip folders we can’t open
 
-        for f in filenames:
-            ext = os.path.splitext(f)[1].lower()
-            if ext in CODE_EXTENSIONS:
-                files.append(os.path.join(dirpath, f))
-
-    files.sort(key=lambda p: os.path.getsize(p))
+    files.sort(key=lambda p: os.path.getsize(p))  # smallest first
     return files
 
 
@@ -193,14 +202,14 @@ def main():
     repo_root = clone_repo(args.repo, args.tmp)
     try:
         deps_info = detect_top_level_info(repo_root)
-        code_files = find_code_files(repo_root)
+        code_files = find_code_files_bfs(repo_root)  # swapped to BFS
         if not code_files:
             print("[!] No code files found. Exiting.")
             return
         file_summaries = {}
         for i, fpath in enumerate(code_files):
             rel = os.path.relpath(fpath, repo_root)
-            print(f"[{i+1}/{len(code_files)}] Summarizing {rel} ...")
+            print(f"[{i+1}/{len(code_files)}] Summarizing {rel}")
             content = read_file(fpath)
             if not content.strip():
                 file_summaries[rel] = "[empty or binary file]"
